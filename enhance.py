@@ -2,7 +2,7 @@ import pandas as pd
 from openpyxl import load_workbook
 from openpyxl.styles import PatternFill
 
-# Load the Excel file
+# Load Excel file
 file_path = 'Input.xlsx'
 output54_df = pd.read_excel(file_path, sheet_name='output54', engine='openpyxl')
 output97_df = pd.read_excel(file_path, sheet_name='output97', engine='openpyxl')
@@ -11,50 +11,78 @@ output97_df = pd.read_excel(file_path, sheet_name='output97', engine='openpyxl')
 output54_df.columns = output54_df.columns.str.strip()
 output97_df.columns = output97_df.columns.str.strip()
 
-# Create a list to store rows for the comparison report
-comparison_rows = []
+# Match by KEY column
+matched_rows = []
+matched_keys = set()
 
-# Track source and row number
 for idx54, row54 in output54_df.iterrows():
     key = row54['KEY']
-    matching_rows = output97_df[output97_df['KEY'] == key]
-    if not matching_rows.empty:
-        row97 = matching_rows.iloc[0]
-        idx97 = matching_rows.index[0]
+    matching = output97_df[output97_df['KEY'] == key]
+    if not matching.empty:
+        row97 = matching.iloc[0]
+        idx97 = matching.index[0]
 
-        row54_with_meta = row54.copy()
-        row54_with_meta['Source'] = 'output54'
-        row54_with_meta['RowNumber'] = idx54 + 2
-        row97_with_meta = row97.copy()
-        row97_with_meta['Source'] = 'output97'
-        row97_with_meta['RowNumber'] = idx97 + 2
+        row54_meta = row54.copy()
+        row54_meta['Source'] = 'output54'
+        row54_meta['RowNumber'] = idx54 + 2
 
-        comparison_rows.append(row54_with_meta)
-        comparison_rows.append(row97_with_meta)
+        row97_meta = row97.copy()
+        row97_meta['Source'] = 'output97'
+        row97_meta['RowNumber'] = idx97 + 2
 
-# Create DataFrame
-comparison_df = pd.DataFrame(comparison_rows)
+        matched_rows.append(row54_meta)
+        matched_rows.append(row97_meta)
+
+        matched_keys.add(key)
+
+# Unmatched rows
+unmatched_rows = []
+
+# From output54
+for idx54, row54 in output54_df.iterrows():
+    if row54['KEY'] not in matched_keys:
+        row_unmatched = row54.copy()
+        row_unmatched['Source'] = 'output54'
+        row_unmatched['RowNumber'] = idx54 + 2
+        unmatched_rows.append(row_unmatched)
+
+# From output97
+for idx97, row97 in output97_df.iterrows():
+    if row97['KEY'] not in matched_keys:
+        row_unmatched = row97.copy()
+        row_unmatched['Source'] = 'output97'
+        row_unmatched['RowNumber'] = idx97 + 2
+        unmatched_rows.append(row_unmatched)
+
+# Create comparison dataframe
+comparison_df = pd.DataFrame(matched_rows)
 cols = ['Source', 'RowNumber'] + [col for col in comparison_df.columns if col not in ['Source', 'RowNumber']]
 comparison_df = comparison_df[cols]
 
-# Save to Excel
-output_file = 'comparison_report_with_highlights.xlsx'
-comparison_df.to_excel(output_file, index=False)
+# Save matched report to Excel
+matched_file = 'comparison_report_with_highlights.xlsx'
+comparison_df.to_excel(matched_file, index=False)
 
-# Load workbook for formatting
-wb = load_workbook(output_file)
+# Apply highlights to mismatches
+wb = load_workbook(matched_file)
 ws = wb.active
+yellow_fill = PatternFill(start_color="FFFF00", end_color="FFFF00", fill_type="solid")
 
-# Apply highlights for differences
 for i in range(2, ws.max_row, 2):
-    for j in range(3, ws.max_column + 1):  # Skip Source and RowNumber
+    for j in range(3, ws.max_column + 1):  # skip Source and RowNumber
         cell1 = ws.cell(row=i, column=j)
-        cell2 = ws.cell(row=i+1, column=j)
+        cell2 = ws.cell(row=i + 1, column=j)
         if cell1.value != cell2.value:
-            fill = PatternFill(start_color="FFFF00", end_color="FFFF00", fill_type="solid")
-            cell1.fill = fill
-            cell2.fill = fill
+            cell1.fill = yellow_fill
+            cell2.fill = yellow_fill
 
-# Save the highlighted file
-wb.save(output_file)
-print(f"Comparison report with highlights saved as '{output_file}'.")
+wb.save(matched_file)
+
+# Save unmatched rows
+unmatched_df = pd.DataFrame(unmatched_rows)
+unmatched_cols = ['Source', 'RowNumber'] + [col for col in unmatched_df.columns if col not in ['Source', 'RowNumber']]
+unmatched_df = unmatched_df[unmatched_cols]
+unmatched_df.to_excel("unmatched_report.xlsx", index=False)
+
+print("✓ Matched report: 'comparison_report_with_highlights.xlsx'")
+print("✓ Unmatched rows saved in: 'unmatched_report.xlsx'")
